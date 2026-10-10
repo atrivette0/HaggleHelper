@@ -1,0 +1,35 @@
+.hh-duplicate {
+  display: none !important;
+}
+
+.hh-msrp {
+  display: inline-block;
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #1a73e8 !important;
+  text-decoration: underline;
+}
+
+.hh-group {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid #c9d7f2;
+  border-radius: 6px;
+  background: #f3f7ff;
+  font-size: 13px;
+  color: #1f2a44;
+}
+
+.hh-group summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.hh-group ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.hh-group a {
+  color: #1a73e8 !important;
+}

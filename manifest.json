@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "HaggleHelper",
+  "version": "0.1.0",
+  "description": "Groups identical Haggle listings with each current bid and adds a Google Shopping link to check MSRP.",
+  "content_scripts": [
+    {
+      "matches": ["*://haggle.com/*", "*://*.haggle.com/*"],
+      "js": ["src/core.js", "src/adapter.js", "src/content.js"],
+      "css": ["src/styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "hagglehelper@atrivette0.github.io",
+      "strict_min_version": "109.0"
+    }
+  }
+}
