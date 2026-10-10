@@ -1,20 +1,27 @@
 {
   "manifest_version": 3,
   "name": "HaggleHelper",
-  "version": "0.1.0",
-  "description": "Groups identical Haggle listings with each current bid and adds a Google Shopping link to check MSRP.",
+  "version": "0.2.0",
+  "description": "Groups repeat Haggle listings with each current bid, adds a Google Shopping link to check MSRP, and keeps your place in search results.",
   "content_scripts": [
+    {
+      "matches": ["*://haggle.com/*", "*://*.haggle.com/*"],
+      "js": ["src/page-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
     {
       "matches": ["*://haggle.com/*", "*://*.haggle.com/*"],
       "js": ["src/core.js", "src/adapter.js", "src/content.js"],
       "css": ["src/styles.css"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "world": "MAIN"
     }
   ],
   "browser_specific_settings": {
     "gecko": {
       "id": "hagglehelper@atrivette0.github.io",
-      "strict_min_version": "109.0"
+      "strict_min_version": "128.0"
     }
   }
 }

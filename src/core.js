@@ -1,5 +1,5 @@
 // Site-independent logic: deciding which listings are "the same product",
-// grouping them, and building the Google Shopping link.
+// grouping them, reading live bid messages and building links.
 (function (root) {
   "use strict";
 
@@ -21,14 +21,14 @@
     return normalizeTitle(listing.title) + "|" + normalizeCondition(listing.condition);
   }
 
-  // "$1,234.50" -> 1234.5; returns null when no amount is present.
-  function parsePrice(text) {
-    const match = String(text || "").match(/\$\s*([\d,]+(?:\.\d{1,2})?)/);
-    return match ? Number(match[1].replace(/,/g, "")) : null;
+  // Haggle identifies a listing by event id plus lot number; its live-bid feed
+  // uses the same "event:lot" key.
+  function lotKey(eventId, lotNumber) {
+    return String(eventId) + ":" + String(lotNumber);
   }
 
-  // Returns groups in the order their first listing appeared on the page.
-  // Each group's listings are sorted by bid, lowest first, unknown bids last.
+  // Groups listings in the order their first listing appears. Each group keeps
+  // that order too, so group.listings[0] is the one shown first on the page.
   function groupListings(listings) {
     const groups = new Map();
     for (const listing of listings) {
@@ -37,22 +37,99 @@
       if (!groups.has(key)) groups.set(key, { key, listings: [] });
       groups.get(key).listings.push(listing);
     }
-    for (const group of groups.values()) {
-      group.listings.sort((a, b) => bidOrder(a.bid) - bidOrder(b.bid));
-    }
     return [...groups.values()];
   }
 
-  function bidOrder(bid) {
-    return bid == null ? Infinity : bid;
+  // Lowest current bid first; listings with no bids yet after those, then sold.
+  function sortByBid(rows) {
+    const rank = (r) => (r.sold ? 2 : r.bid == null ? 1 : 0);
+    return [...rows].sort((a, b) => rank(a) - rank(b) || (a.bid || 0) - (b.bid || 0));
   }
 
-  function googleShoppingUrl(title) {
-    const query = String(title || "").replace(/\s+/g, " ").trim();
+  // Reads one message from Haggle's live-bid websocket. Returns
+  // { key, bid, nextBid, bidCount, sold, endsAt } or null for messages that
+  // aren't about a listing's bid (pings, timer ticks).
+  function bidFromMessage(message, now) {
+    let msg = message;
+    if (typeof msg === "string") {
+      try {
+        msg = JSON.parse(msg);
+      } catch (e) {
+        return null;
+      }
+    }
+    const data = msg && msg.data;
+    if (!data || data.lot_id == null || data.event_id == null) return null;
+    const key = lotKey(data.event_id, data.lot_id);
+    if (msg.type === "lot_sold") return { key, sold: true };
+    if (msg.type !== "lot_state" && msg.type !== "bid_update") return null;
+    const amount = parseFloat(data.bid_amount);
+    const next = parseFloat(data.next_bid_amount);
+    const history = Array.isArray(data.bidding_history) ? data.bidding_history : null;
+    return {
+      key,
+      bid: amount > 0 ? amount : null,
+      nextBid: next > 0 ? next : null,
+      bidCount: history ? history.length : null,
+      sold: data.status === "2" || data.time_remaining <= 0 || msg.type === "error",
+      endsAt: data.end_time || (data.time_remaining > 0 ? new Date((now || Date.now()) + data.time_remaining * 1000).toISOString() : null),
+    };
+  }
+
+  // The GetLots variables for the search the page is showing: the filters the
+  // page itself last asked for, or just the search box text on a fresh load.
+  function lotsQuery(searchText, lastPageVariables) {
+    const base = { sort: [{ field: "end_event_date", order: "asc" }] };
+    if (lastPageVariables) {
+      const out = { ...base };
+      if (lastPageVariables.sort) out.sort = lastPageVariables.sort;
+      if (lastPageVariables.query) out.query = lastPageVariables.query;
+      return out;
+    }
+    const text = String(searchText || "").trim();
+    return text ? { ...base, query: [{ field: "title", value: text }] } : base;
+  }
+
+  function money(n) {
+    if (n == null) return "";
+    return "$" + Number(n).toFixed(2);
+  }
+
+  // Haggle cuts titles off at about 50 characters. When the description
+  // starts with the title it's the full product name, so search by that.
+  function shoppingQuery(listing) {
+    const title = String(listing.title || "").replace(/\s+/g, " ").trim();
+    const full = String(listing.description || "").replace(/\s+/g, " ").trim();
+    const titleStart = normalizeTitle(title).replace(/\s*\S+$/, ""); // last word may be cut
+    let text = title;
+    if (titleStart && full.length > title.length && normalizeTitle(full).startsWith(titleStart)) text = full;
+    if (text.length > 100) text = text.slice(0, 100).replace(/\s+\S*$/, "");
+    return text;
+  }
+
+  function googleShoppingUrl(text) {
+    const query = String(text || "").replace(/\s+/g, " ").trim();
     return "https://www.google.com/search?tbm=shop&q=" + encodeURIComponent(query);
   }
 
-  const api = { normalizeTitle, normalizeCondition, groupKey, parsePrice, groupListings, googleShoppingUrl };
+  function itemPath(listing) {
+    return "/event/" + encodeURIComponent(listing.event_id) + "/" + encodeURIComponent(listing.lot_number);
+  }
+
+  const api = {
+    normalizeTitle,
+    normalizeCondition,
+    groupKey,
+    lotKey,
+    groupListings,
+    sortByBid,
+    bidFromMessage,
+    lotsQuery,
+    money,
+    shoppingQuery,
+    googleShoppingUrl,
+    itemPath,
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.HaggleHelperCore = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
