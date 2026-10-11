@@ -12,7 +12,7 @@
 //
 // Elsewhere (home, event pages) it only adds the MSRP link to Haggle's cards.
 // It also keeps your place in the results when you go back from an item.
-// The switch at the bottom left turns all of this off and on.
+// The switch in the extension's toolbar menu turns all of this off and on.
 (function () {
   "use strict";
 
@@ -28,24 +28,7 @@
     " lot_number event_id title description condition location retail_value end_event_date" +
     " images { order url } bid_detail { current_bid bid_history { bidder } } } }";
 
-  // ---- Settings ----------------------------------------------------------
-
-  function storageGet(key, fallback) {
-    try {
-      const v = localStorage.getItem(key);
-      return v == null ? fallback : JSON.parse(v);
-    } catch (e) {
-      return fallback;
-    }
-  }
-  function storageSet(key, value) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (e) {
-      // Private windows can refuse storage; the setting just won't stick.
-    }
-  }
-  let enabled = storageGet("hh-enabled", true);
+  let enabled = document.documentElement.getAttribute("data-hh-enabled") !== "false";
 
   function onResultsPage() {
     return location.pathname === "/browse";
@@ -180,7 +163,11 @@
         lots.length > 1 ? el("span", { class: "hh-count", text: "×" + lots.length }) : null,
       ]),
       el("a", { class: "hh-title", href: core.itemPath(lead), title: lead.description || lead.title, text: lead.title }),
-      el("ul", { class: "hh-rows" }, lots.map(listingRow)),
+      // Listings and bids stay folded until you open them.
+      el("details", { class: "hh-listings" }, [
+        el("summary", { class: "hh-sum" }),
+        el("ul", { class: "hh-rows" }, lots.map(listingRow)),
+      ]),
       msrpLink(lead),
     ]);
     card.hhLots = lots;
@@ -290,7 +277,20 @@
       }
       const rows = card.querySelectorAll("li[data-hh-lot]");
       card.hhLots.forEach((lot, i) => rows[i] && fillRow(rows[i], lot));
+      card.querySelector(".hh-sum").textContent = summaryText(card.hhLots);
     }
+  }
+
+  // The folded line: the best live bid, and how many listings there are.
+  function summaryText(lots) {
+    const infos = lots.map(bidInfo);
+    const live = infos.filter((i) => !i.sold);
+    const bids = live.map((i) => i.bid).filter((b) => b != null);
+    const count = lots.length > 1 ? lots.length + " listings · " : "";
+    if (!live.length) return count + "Time's up";
+    if (bids.length) return count + (lots.length > 1 ? "lowest bid " : "Bid ") + core.money(Math.min(...bids));
+    if (live.some((i) => !i.known)) return count + "Loading bids…";
+    return count + "No bids yet";
   }
 
   function subscribeVisible() {
@@ -319,31 +319,30 @@
     document.querySelectorAll(".hh-extras").forEach((n) => n.remove());
   }
 
-  // ---- On/off switch ----------------------------------------------------------
+  // ---- On/off ---------------------------------------------------------------
+  // The switch lives in the extension's toolbar menu (src/popup.html). This
+  // script runs in the page, which can't read extension settings, so
+  // src/bridge.js passes the setting on as an attribute and an event.
 
-  let toggle = null;
-  function updateToggle() {
-    if (!toggle) {
-      toggle = el("button", { class: "hh-toggle", type: "button", role: "switch" });
-      toggle.addEventListener("click", () => {
-        enabled = !enabled;
-        storageSet("hh-enabled", enabled);
-        stopRestoring();
-        if (enabled) {
-          results = { queryJson: null, lots: [], loading: false, failed: false, version: results.version + 1 };
-          refreshResults();
-        } else {
-          removeView();
-          removeNativeDecorations();
-        }
-        run();
-      });
-    }
-    toggle.setAttribute("aria-checked", String(enabled));
-    toggle.textContent = "HaggleHelper " + (enabled ? "on" : "off");
-    toggle.title = enabled ? "Switch back to Haggle's own pages" : "Turn HaggleHelper on";
-    if (!toggle.isConnected) document.body.appendChild(toggle);
+  function readSetting() {
+    return document.documentElement.getAttribute("data-hh-enabled") !== "false";
   }
+
+  function setEnabled(value) {
+    if (value === enabled) return;
+    enabled = value;
+    stopRestoring();
+    if (enabled) {
+      results = { queryJson: null, lots: [], loading: false, failed: false, version: results.version + 1 };
+      refreshResults();
+    } else {
+      removeView();
+      removeNativeDecorations();
+    }
+    run();
+  }
+
+  document.addEventListener("hh:setting", () => setEnabled(readSetting()));
 
   // ---- Keeping scroll position --------------------------------------------
   // Save how far down the results you are as you scroll; when you come back to
@@ -414,7 +413,6 @@
   // ---- Wiring ---------------------------------------------------------------
 
   function apply() {
-    updateToggle();
     if (!enabled) return;
     if (onResultsPage()) renderView();
     else {
