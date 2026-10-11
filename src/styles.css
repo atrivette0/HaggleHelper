@@ -132,9 +132,20 @@
   text-decoration: none;
 }
 
-.hh-rows {
-  margin: 0;
+.hh-listings {
   padding: 0 10px;
+}
+
+.hh-sum {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  list-style-position: inside;
+}
+
+.hh-rows {
+  margin: 4px 0 0;
+  padding: 0;
   list-style: none;
   font-size: 13px;
 }
@@ -196,27 +207,6 @@
   font-size: 12px;
   color: #1a73e8 !important;
   text-decoration: underline;
-}
-
-/* ---- On/off switch --------------------------------------------------------- */
-
-.hh-toggle {
-  position: fixed;
-  left: 12px;
-  bottom: 12px;
-  z-index: 2147483000;
-  padding: 8px 14px;
-  border: 0;
-  border-radius: 999px;
-  background: #2b2464;
-  color: #fff;
-  font: 600 13px/1.2 system-ui, sans-serif;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-  cursor: pointer;
-}
-
-.hh-toggle[aria-checked="false"] {
-  background: #6b7280;
 }
 
 /* ---- Dark theme ------------------------------------------------------------- */
