@@ -1,0 +1,94 @@
+/* Repeat listings of a product already shown earlier in the results. */
+[data-hh-repeat] {
+  display: none !important;
+}
+
+.hh-extras {
+  padding: 0 8px 8px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.hh-msrp {
+  display: inline-block;
+  color: #1a73e8 !important;
+  text-decoration: underline;
+}
+
+.hh-group {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid #c9d7f2;
+  border-radius: 6px;
+  background: #f3f7ff;
+  color: #1f2a44;
+  text-align: left;
+}
+
+.hh-group summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.hh-group ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hh-group li {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 0;
+}
+
+.hh-group li a {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #1a73e8 !important;
+}
+
+.hh-group .hh-bid {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hh-group .hh-note {
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.hh-group li.hh-current a {
+  color: #1f2a44 !important;
+  text-decoration: none;
+}
+
+.hh-toggle {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  z-index: 2147483000;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #2b2464;
+  color: #fff;
+  font: 600 13px/1.2 system-ui, sans-serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}
+
+.dark .hh-group {
+  background: #1e2a44;
+  border-color: #33466e;
+  color: #e5e7eb;
+}
+
+.dark .hh-group li.hh-current a {
+  color: #e5e7eb !important;
+}

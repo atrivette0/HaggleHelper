@@ -1,0 +1,9 @@
+{
+  "name": "hagglehelper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser extension that improves search results on haggle.com",
+  "scripts": {
+    "test": "node --test"
+  }
+}
