@@ -3,7 +3,7 @@
 A Chrome and Firefox extension that makes Haggle search results easier to shop, on haggle.com and a-stock.bid.
 
 - **Every result at once.** Search results load in full up front (up to 5,000), instead of a few rows at a time as you scroll.
-- **Repeat listings grouped.** Listings of the same product (same title and condition) share one card. A folded line shows how many listings there are and the lowest bid; open it to see each listing's location, current bid and time left, lowest bid first, each linking to that listing.
+- **Repeat listings grouped.** Listings of the same product (same title, any condition) share one card, so each product shows up once. A folded line shows how many listings there are and the lowest bid; open it to see each listing's location, condition, current bid and time left, lowest bid first, each linking to that listing.
 - **Check MSRP.** Every card gets a link that searches Google Shopping for the product, so you can check Haggle's retail price.
 - **Keeps your place.** Going back from an item returns you to where you were in the results instead of the top.
 - **On/off switch.** Click HaggleHelper in the browser's extensions menu (the puzzle-piece icon; pin it to keep it in the toolbar) to switch back to Haggle's own pages. Open Haggle tabs switch right away, and the choice is remembered.

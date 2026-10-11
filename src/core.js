@@ -17,8 +17,10 @@
     return String(condition || "").toLowerCase().replace(/\s+/g, " ").trim();
   }
 
+  // Listings of the same product share one card whatever their condition;
+  // each listing's condition is shown on its own row.
   function groupKey(listing) {
-    return normalizeTitle(listing.title) + "|" + normalizeCondition(listing.condition);
+    return normalizeTitle(listing.title);
   }
 
   // Haggle identifies a listing by event id plus lot number; its live-bid feed

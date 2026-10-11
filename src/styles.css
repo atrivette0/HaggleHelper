@@ -105,6 +105,10 @@
   background: #ffbf00cc;
 }
 
+.hh-cond[data-cond="mixed"] {
+  background: #4b5563cc;
+}
+
 .hh-retail {
   bottom: 6px;
   left: 6px;
@@ -151,8 +155,10 @@
 }
 
 .hh-rows li {
-  display: flex;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "loc bid" "cond left";
+  column-gap: 6px;
   align-items: baseline;
   padding: 3px 0;
   border-top: 1px solid #eef0f5;
@@ -163,7 +169,7 @@
 }
 
 .hh-rows a {
-  flex: 1;
+  grid-area: loc;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -171,13 +177,36 @@
   color: #1a73e8 !important;
 }
 
+.hh-rows .hh-rcond {
+  grid-area: cond;
+  justify-self: start;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  background: #2274a5;
+}
+
+.hh-rows .hh-rcond[data-cond="Appears New"] {
+  background: #21a0a0;
+}
+
+.hh-rows .hh-rcond[data-cond="As Is"] {
+  background: #c99700;
+}
+
 .hh-rows .hh-bid {
+  grid-area: bid;
+  text-align: right;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .hh-rows .hh-left {
-  min-width: 52px;
+  grid-area: left;
+  font-size: 12px;
   text-align: right;
   color: #6b7280;
   white-space: nowrap;

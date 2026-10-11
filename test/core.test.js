@@ -9,12 +9,12 @@ test("titles that differ only in case and punctuation match", () => {
   );
 });
 
-test("same title and condition group together, in page order", () => {
+test("listings with the same title group together whatever their condition, in page order", () => {
   const groups = core.groupListings([
     { title: "Dyson V8 Vacuum", condition: "Brand New", lot_number: "1" },
     { title: "Dyson V8 vacuum", condition: "Brand New ", lot_number: "2" },
-    { title: "Dyson V8 Vacuum", condition: "As Is", lot_number: "3" },
-    { title: "Dyson V8 Vacuum", condition: "brand new", lot_number: "4" },
+    { title: "Lamp", condition: "As Is", lot_number: "3" },
+    { title: "Dyson V8 Vacuum!", condition: "As Is", lot_number: "4" },
   ]);
   assert.strictEqual(groups.length, 2);
   assert.deepStrictEqual(groups[0].listings.map((l) => l.lot_number), ["1", "2", "4"]);

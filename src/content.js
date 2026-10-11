@@ -3,8 +3,9 @@
 //
 // On search results (/browse) it swaps Haggle's grid for its own list:
 // - every result is loaded up front, not a few rows at a time;
-// - listings of the same product (same title and condition) share one card
-//   that lists each listing's location, current bid and time left;
+// - listings of the same product (same title) share one card
+//   (whatever their condition) that lists each listing's location,
+//   condition, current bid and time left;
 // - each card links to Google Shopping to check the MSRP.
 // Haggle's own grid only renders the rows on screen and re-renders them as you
 // scroll, so changing it in place made cards blink in and out; HaggleHelper
@@ -134,10 +135,12 @@
     return images[0] && images[0].url;
   }
 
-  function listingRow(lot) {
+  function listingRow(lot, showCondition) {
     const key = core.lotKey(lot.event_id, lot.lot_number);
+    const condition = (lot.condition || "").trim();
     return el("li", { "data-hh-lot": key }, [
       el("a", { href: core.itemPath(lot), text: lot.location || "Listing" }),
+      showCondition ? el("span", { class: "hh-rcond", "data-cond": condition, text: condition }) : null,
       el("span", { class: "hh-bid" }),
       el("span", { class: "hh-left" }),
     ]);
@@ -155,10 +158,14 @@
     const lots = core.sortByBid(group.listings.map((lot) => ({ lot, ...bidInfo(lot) }))).map((r) => r.lot);
     const lead = lots[0];
     const img = firstImage(lead);
+    const conditions = [...new Set(lots.map((l) => (l.condition || "").trim()))];
+    const mixed = conditions.length > 1;
     const card = el("article", { class: "hh-card" }, [
       el("a", { class: "hh-photo", href: core.itemPath(lead) }, [
         img ? el("img", { src: img, alt: "", loading: "lazy" }) : null,
-        el("span", { class: "hh-cond", "data-cond": (lead.condition || "").trim(), text: (lead.condition || "").trim() }),
+        mixed
+          ? el("span", { class: "hh-cond", "data-cond": "mixed", text: conditions.length + " conditions" })
+          : el("span", { class: "hh-cond", "data-cond": conditions[0], text: conditions[0] }),
         lead.retail_value ? el("span", { class: "hh-retail", text: core.money(lead.retail_value) }) : null,
         lots.length > 1 ? el("span", { class: "hh-count", text: "×" + lots.length }) : null,
       ]),
@@ -166,7 +173,7 @@
       // Listings and bids stay folded until you open them.
       el("details", { class: "hh-listings" }, [
         el("summary", { class: "hh-sum" }),
-        el("ul", { class: "hh-rows" }, lots.map(listingRow)),
+        el("ul", { class: "hh-rows" }, lots.map((lot) => listingRow(lot, mixed))),
       ]),
       msrpLink(lead),
     ]);
