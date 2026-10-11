@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "HaggleHelper",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Groups repeat Haggle and A-Stock listings with each current bid, adds a Google Shopping link to check MSRP, and keeps your place in search results.",
   "permissions": [
     "storage"
