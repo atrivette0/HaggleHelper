@@ -114,3 +114,46 @@ test("timeLeft counts down and is empty once ended", () => {
   assert.strictEqual(core.timeLeft("2026-10-09T23:00:00Z", now), "");
   assert.strictEqual(core.timeLeft(null, now), "");
 });
+
+test("loadAllLots fetches pages several at a time and hands them over in order", async () => {
+  const total = 1234;
+  const requested = [];
+  let inFlight = 0;
+  let mostInFlight = 0;
+  const got = [];
+  await core.loadAllLots(
+    async (from) => {
+      requested.push(from);
+      inFlight++;
+      mostInFlight = Math.max(mostInFlight, inFlight);
+      // Later pages answer first, to check the order is kept.
+      await new Promise((r) => setTimeout(r, 20 - from / 100));
+      inFlight--;
+      const size = Math.max(0, Math.min(core.PAGE_SIZE, total - from));
+      return Array.from({ length: size }, (_, i) => from + i);
+    },
+    { max: 5000, parallel: 4, onPage: (page) => got.push(...page) }
+  );
+  assert.deepStrictEqual(got, Array.from({ length: total }, (_, i) => i));
+  assert.strictEqual(mostInFlight, 4);
+  // Stops asking once a short page shows where the results end.
+  assert.ok(requested.length <= 4, "requested " + requested.join(","));
+});
+
+test("loadAllLots stops when onPage says so, and reports a failed page", async () => {
+  const full = (from) => Array.from({ length: core.PAGE_SIZE }, (_, i) => from + i);
+  let pages = 0;
+  await core.loadAllLots(async (from) => full(from), {
+    max: 5000,
+    parallel: 2,
+    onPage: () => (++pages < 2 ? undefined : false),
+  });
+  assert.strictEqual(pages, 2);
+  await assert.rejects(
+    core.loadAllLots(async (from) => { if (from > 0) throw new Error("down"); return full(from); }, {
+      max: 5000,
+      parallel: 2,
+      onPage: () => {},
+    })
+  );
+});

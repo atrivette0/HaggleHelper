@@ -21,13 +21,7 @@
   const adapter = globalThis.HaggleHelperAdapter;
   const hook = window.__HaggleHelper || { bids: new Map(), subscribed: new Set(), subscribe() {} };
   const MARK = "data-hh";
-  const PAGE_SIZE = 500; // the most Haggle's API returns per request
   const MAX_RESULTS = 5000;
-  const LOTS_QUERY =
-    "query HaggleHelperLots($from: Int!, $size: Int!, $sort: [SortInput]!, $query: [QueryInput!]) {" +
-    " getLots(from: $from, size: $size, sort: $sort, query: $query) {" +
-    " lot_number event_id title description condition location retail_value end_event_date" +
-    " images { order url } bid_detail { current_bid bid_history { bidder } } } }";
 
   let enabled = document.documentElement.getAttribute("data-hh-enabled") !== "false";
 
@@ -50,34 +44,58 @@
     if (queryJson === results.queryJson) return;
     results = { queryJson, lots: [], loading: true, failed: false, version: results.version + 1 };
     const mine = results;
+    const api = hook.api;
+    // Pages page-hook.js already requested for this search, as the page started.
+    const prefetched = hook.prefetch && hook.prefetch.queryJson === queryJson ? hook.prefetch.pages : new Map();
+    hook.prefetch = null;
+    async function fetchPage(from) {
+      const json = prefetched.has(from)
+        ? await prefetched.get(from)
+        : await fetch(api.url, {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-api-key": api.key },
+            body: core.lotsRequestBody(query, from),
+          }).then((res) => res.json());
+      if (!json || !json.data || !json.data.getLots) throw new Error("no data");
+      return json.data.getLots;
+    }
     try {
-      for (let from = 0; from < MAX_RESULTS; from += PAGE_SIZE) {
-        const res = await fetch(hook.api.url, {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-api-key": hook.api.key },
-          body: JSON.stringify({
-            operationName: "HaggleHelperLots",
-            query: LOTS_QUERY,
-            variables: { ...query, from, size: PAGE_SIZE },
-          }),
-        });
-        const json = await res.json();
-        if (results !== mine) return; // the search changed meanwhile
-        const page = (json && json.data && json.data.getLots) || [];
-        if (!json || !json.data) throw new Error("no data");
-        mine.lots = mine.lots.concat(page);
-        mine.version++;
-        renderView();
-        if (page.length < PAGE_SIZE) break;
-      }
+      await core.loadAllLots(fetchPage, {
+        max: MAX_RESULTS,
+        parallel: hook.parallel || 4,
+        onPage(page) {
+          if (results !== mine) return false; // the search changed meanwhile
+          mine.lots = mine.lots.concat(page);
+          mine.version++;
+          renderSoon();
+        },
+      });
     } catch (e) {
+      if (results === mine && mine.lots.length === 0 && api.remembered) {
+        // The key remembered from an earlier visit has expired. Start over
+        // once the page uses its current key.
+        hook.forgetApi();
+        results = { ...results, queryJson: null, loading: false };
+        return;
+      }
       if (results === mine) mine.failed = true;
     }
     if (results === mine) {
       mine.loading = false;
       mine.version++;
-      renderView();
+      renderSoon();
     }
+  }
+
+  // Pages can arrive in quick succession; build the list once for them all.
+  let renderPending = false;
+  function renderSoon() {
+    if (renderPending) return;
+    renderPending = true;
+    setTimeout(() => {
+      renderPending = false;
+      renderView();
+    }, 16);
   }
 
   // ---- Bids ---------------------------------------------------------------
