@@ -1,7 +1,7 @@
 // Runs in Haggle's own page context before its scripts start, so HaggleHelper
 // can see what the page already receives:
 // - live bids from Haggle's bid websocket (current bid isn't shown on cards);
-// - the API address and key, and the filters behind the results on screen.
+// - the address and key of Haggle's data API.
 // It only listens; the one thing it sends is a "subscribe" for listings that
 // are grouped with something on screen, so their bids show too.
 (function () {
@@ -11,7 +11,6 @@
   const hh = (window.__HaggleHelper = {
     bids: new Map(), // "event:lot" -> latest bid message, as raw parsed JSON
     api: null, // { url, key } of Haggle's GraphQL API
-    lastLotsVariables: null, // variables of the page's latest GetLots request
     socket: null,
     subscribed: new Set(),
     subscribe(eventId, lotNumber) {
@@ -75,22 +74,10 @@
           hh.api = { url, key };
           notify();
         }
-        const body = typeof init.body === "string" ? JSON.parse(init.body) : null;
-        if (body && body.operationName === "GetLots" && body.variables && !hasLotList(body.variables)) {
-          hh.lastLotsVariables = body.variables;
-          hh.lastLotsPath = location.pathname + location.search;
-          notify();
-        }
       }
     } catch (e) {
       // Never get in the way of the page's own requests.
     }
     return nativeFetch.apply(this, arguments);
   };
-
-  // GetLots is also used to look up specific lots (watchlist, an event's
-  // preview); only searches describe the results grid.
-  function hasLotList(variables) {
-    return (variables.query || []).some((q) => q.field === "lot_number");
-  }
 })();

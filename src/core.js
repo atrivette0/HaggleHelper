@@ -76,18 +76,28 @@
     };
   }
 
-  // The GetLots variables for the search the page is showing: the filters the
-  // page itself last asked for, or just the search box text on a fresh load.
-  function lotsQuery(searchText, lastPageVariables) {
-    const base = { sort: [{ field: "end_event_date", order: "asc" }] };
-    if (lastPageVariables) {
-      const out = { ...base };
-      if (lastPageVariables.sort) out.sort = lastPageVariables.sort;
-      if (lastPageVariables.query) out.query = lastPageVariables.query;
-      return out;
+  // Haggle keeps the search and the filter bar's choices in the address, e.g.
+  // /browse?search=lamp&sort=retail-price-asc&categories=18,21&conditions=1.
+  // Builds the same GetLots variables Haggle's own page builds from them.
+  const SORTS = {
+    "ending-soonest": { field: "end_event_date", order: "asc" },
+    "retail-price-asc": { field: "retail_value", order: "asc" },
+    "retail-price-desc": { field: "retail_value", order: "desc" },
+  };
+  function lotsQuery(search) {
+    const params = new URLSearchParams(search);
+    const list = (name) => (params.get(name) || "").split(",").map((v) => v.trim()).filter(Boolean);
+    const query = [];
+    const text = (params.get("search") || "").trim();
+    if (text) query.push({ field: "title", value: text });
+    const filters = [["conditions", "condition_id"], ["locations", "location_id"], ["categories", "category_id"]];
+    for (const [param, field] of filters) {
+      const values = [...new Set(list(param))];
+      if (values.length) query.push({ field, values });
     }
-    const text = String(searchText || "").trim();
-    return text ? { ...base, query: [{ field: "title", value: text }] } : base;
+    const out = { sort: [SORTS[params.get("sort")] || SORTS["ending-soonest"]] };
+    if (query.length) out.query = query;
+    return out;
   }
 
   function money(n) {

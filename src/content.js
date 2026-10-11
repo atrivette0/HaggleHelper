@@ -56,9 +56,7 @@
   let results = { queryJson: null, lots: [], loading: false, failed: false, version: 0 };
 
   function currentQuery() {
-    const here = location.pathname + location.search;
-    const pageVars = hook.lastLotsPath === here ? hook.lastLotsVariables : null;
-    return core.lotsQuery(new URLSearchParams(location.search).get("search"), pageVars);
+    return core.lotsQuery(location.search);
   }
 
   async function refreshResults() {
