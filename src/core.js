@@ -102,6 +102,63 @@
     return out;
   }
 
+  // The fields the results list needs, and nothing more: each extra field is
+  // sent for every one of up to thousands of listings.
+  const LOTS_QUERY =
+    "query HaggleHelperLots($from: Int!, $size: Int!, $sort: [SortInput]!, $query: [QueryInput!]) {" +
+    " getLots(from: $from, size: $size, sort: $sort, query: $query) {" +
+    " lot_number event_id title description condition location retail_value end_event_date" +
+    " images { order url } bid_detail { current_bid } } }";
+  const PAGE_SIZE = 500; // the most Haggle's API returns per request
+
+  function lotsRequestBody(query, from) {
+    return JSON.stringify({
+      operationName: "HaggleHelperLots",
+      query: LOTS_QUERY,
+      variables: { ...query, from, size: PAGE_SIZE },
+    });
+  }
+
+  // Fetches every page of results, several at a time, and hands them to
+  // onPage in order. fetchPage(from) resolves to that page's listings; a page
+  // shorter than PAGE_SIZE is the last. onPage returning false stops loading.
+  // Finishes as soon as the last page is in, without waiting for requests
+  // that were sent before it was known to be the last.
+  function loadAllLots(fetchPage, { max, parallel, onPage }) {
+    return new Promise((resolve, reject) => {
+      const pages = [];
+      let next = 0; // the next "from" to request
+      let end = max; // no results exist at or past this "from"
+      let shown = 0; // pages handed to onPage so far
+      let stopped = false;
+      function finish(error) {
+        if (stopped) return;
+        stopped = true;
+        if (error) reject(error);
+        else resolve();
+      }
+      function request() {
+        if (stopped || next >= end) return;
+        const from = next;
+        next += PAGE_SIZE;
+        Promise.resolve()
+          .then(() => fetchPage(from))
+          .then((page) => {
+            if (stopped) return;
+            pages[from / PAGE_SIZE] = page;
+            if (page.length < PAGE_SIZE) end = Math.min(end, from + PAGE_SIZE);
+            while (pages[shown] && shown * PAGE_SIZE < end) {
+              if (onPage(pages[shown++]) === false) return finish();
+            }
+            if (shown * PAGE_SIZE >= end) return finish();
+            request();
+          })
+          .catch(finish);
+      }
+      for (let i = 0; i < parallel; i++) request();
+    });
+  }
+
   function money(n) {
     if (n == null) return "";
     return "$" + Number(n).toFixed(2);
@@ -148,6 +205,10 @@
     sortByBid,
     bidFromMessage,
     lotsQuery,
+    LOTS_QUERY,
+    PAGE_SIZE,
+    lotsRequestBody,
+    loadAllLots,
     money,
     shoppingQuery,
     googleShoppingUrl,

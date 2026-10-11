@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- A top hat, tipped to one side, with a green band. -->
+  <g transform="rotate(-12 64 66)">
+    <path d="M34 14 Q64 8 94 14 Q96 15 95.8 18 L87 98 L41 98 L32.2 18 Q32 15 34 14 Z" fill="#2b2464"/>
+    <path d="M38.6 64 Q64 70 89.4 64 L87.8 79 Q64 85 40.2 79 Z" fill="#40bd17"/>
+    <path d="M6 84 Q10 78 18 82 Q40 94 64 94 Q88 94 110 82 Q118 78 122 84 Q122 92 108 100 Q90 110 64 110 Q38 110 20 100 Q6 92 6 84 Z" fill="#2b2464"/>
+  </g>
+</svg>
