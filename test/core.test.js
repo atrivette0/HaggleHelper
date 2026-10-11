@@ -59,19 +59,26 @@ test("bidFromMessage reads Haggle's live bid messages", () => {
   assert.strictEqual(core.bidFromMessage("not json"), null);
 });
 
-test("lotsQuery mirrors the page's filters, or the search box on a fresh load", () => {
-  assert.deepStrictEqual(core.lotsQuery("vacuum", null), {
-    sort: [{ field: "end_event_date", order: "asc" }],
+test("lotsQuery builds Haggle's filters from the address", () => {
+  const endingSoonest = [{ field: "end_event_date", order: "asc" }];
+  assert.deepStrictEqual(core.lotsQuery(""), { sort: endingSoonest });
+  assert.deepStrictEqual(core.lotsQuery("?search=vacuum"), {
+    sort: endingSoonest,
     query: [{ field: "title", value: "vacuum" }],
   });
-  assert.deepStrictEqual(core.lotsQuery("", null), { sort: [{ field: "end_event_date", order: "asc" }] });
-  const pageVars = {
-    from: 48,
-    size: 24,
+  assert.deepStrictEqual(core.lotsQuery("?search=lamp&sort=retail-price-desc&categories=18,21&locations=111&conditions=1,4"), {
     sort: [{ field: "retail_value", order: "desc" }],
-    query: [{ field: "title", value: "lamp" }, { field: "condition_id", values: ["1"] }],
-  };
-  assert.deepStrictEqual(core.lotsQuery("lamp", pageVars), { sort: pageVars.sort, query: pageVars.query });
+    query: [
+      { field: "title", value: "lamp" },
+      { field: "condition_id", values: ["1", "4"] },
+      { field: "location_id", values: ["111"] },
+      { field: "category_id", values: ["18", "21"] },
+    ],
+  });
+  assert.deepStrictEqual(core.lotsQuery("?sort=default&categories=18,18"), {
+    sort: endingSoonest,
+    query: [{ field: "category_id", values: ["18"] }],
+  });
 });
 
 test("shoppingQuery uses the full name when the description starts with the title", () => {
