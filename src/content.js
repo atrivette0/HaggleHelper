@@ -1,11 +1,18 @@
 // Runs on Haggle pages, in the page's own context (it reads React props and
-// what src/page-hook.js collected):
-// - adds a "Check MSRP" Google Shopping link to every listing card;
-// - when the same product (same title and condition) is listed more than once
-//   in the current results, the first card gets a panel with every listing's
-//   location and current bid, and the repeat cards are hidden (toggleable);
-// - remembers how far down the results you scrolled and returns there when
-//   you come back from an item.
+// what src/page-hook.js collected).
+//
+// On search results (/browse) it swaps Haggle's grid for its own list:
+// - every result is loaded up front, not a few rows at a time;
+// - listings of the same product (same title and condition) share one card
+//   that lists each listing's location, current bid and time left;
+// - each card links to Google Shopping to check the MSRP.
+// Haggle's own grid only renders the rows on screen and re-renders them as you
+// scroll, so changing it in place made cards blink in and out; HaggleHelper
+// leaves it alone and hides it instead.
+//
+// Elsewhere (home, event pages) it only adds the MSRP link to Haggle's cards.
+// It also keeps your place in the results when you go back from an item.
+// The switch at the bottom left turns all of this off and on.
 (function () {
   "use strict";
 
@@ -13,13 +20,13 @@
   const adapter = globalThis.HaggleHelperAdapter;
   const hook = window.__HaggleHelper || { bids: new Map(), subscribed: new Set(), subscribe() {} };
   const MARK = "data-hh";
-  const MAX_RESULTS = 500; // Haggle's API returns at most 500 per request.
-  const MAX_EXTRA_SUBSCRIPTIONS = 200;
+  const PAGE_SIZE = 500; // the most Haggle's API returns per request
+  const MAX_RESULTS = 5000;
   const LOTS_QUERY =
     "query HaggleHelperLots($from: Int!, $size: Int!, $sort: [SortInput]!, $query: [QueryInput!]) {" +
     " getLots(from: $from, size: $size, sort: $sort, query: $query) {" +
     " lot_number event_id title description condition location retail_value end_event_date" +
-    " bid_detail { current_bid bid_history { bidder } } } }";
+    " images { order url } bid_detail { current_bid bid_history { bidder } } } }";
 
   // ---- Settings ----------------------------------------------------------
 
@@ -38,15 +45,15 @@
       // Private windows can refuse storage; the setting just won't stick.
     }
   }
-  let hideRepeats = storageGet("hh-hide-repeats", true);
-  const openPanels = new Set(); // group keys whose bid list is expanded
+  let enabled = storageGet("hh-enabled", true);
 
-  // ---- All results for the current search --------------------------------
-  // The grid only renders the rows on screen, so repeats further down aren't
-  // in the page yet. Ask Haggle's API for the whole result set, using the same
-  // filters the page used.
+  function onResultsPage() {
+    return location.pathname === "/browse";
+  }
 
-  let results = { queryJson: null, lots: [] };
+  // ---- Loading every result ------------------------------------------------
+
+  let results = { queryJson: null, lots: [], loading: false, failed: false, version: 0 };
 
   function currentQuery() {
     const here = location.pathname + location.search;
@@ -55,29 +62,39 @@
   }
 
   async function refreshResults() {
-    if (location.pathname !== "/browse" || !hook.api) return;
+    if (!enabled || !onResultsPage() || !hook.api) return;
     const query = currentQuery();
     const queryJson = JSON.stringify(query);
     if (queryJson === results.queryJson) return;
-    results = { queryJson, lots: [] };
+    results = { queryJson, lots: [], loading: true, failed: false, version: results.version + 1 };
+    const mine = results;
     try {
-      const res = await fetch(hook.api.url, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-api-key": hook.api.key },
-        body: JSON.stringify({
-          operationName: "HaggleHelperLots",
-          query: LOTS_QUERY,
-          variables: { ...query, from: 0, size: MAX_RESULTS },
-        }),
-      });
-      const json = await res.json();
-      const lots = (json && json.data && json.data.getLots) || [];
-      if (results.queryJson === queryJson) {
-        results.lots = lots;
-        schedule();
+      for (let from = 0; from < MAX_RESULTS; from += PAGE_SIZE) {
+        const res = await fetch(hook.api.url, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-api-key": hook.api.key },
+          body: JSON.stringify({
+            operationName: "HaggleHelperLots",
+            query: LOTS_QUERY,
+            variables: { ...query, from, size: PAGE_SIZE },
+          }),
+        });
+        const json = await res.json();
+        if (results !== mine) return; // the search changed meanwhile
+        const page = (json && json.data && json.data.getLots) || [];
+        if (!json || !json.data) throw new Error("no data");
+        mine.lots = mine.lots.concat(page);
+        mine.version++;
+        renderView();
+        if (page.length < PAGE_SIZE) break;
       }
     } catch (e) {
-      // Fall back to grouping only the cards on screen.
+      if (results === mine) mine.failed = true;
+    }
+    if (results === mine) {
+      mine.loading = false;
+      mine.version++;
+      renderView();
     }
   }
 
@@ -87,187 +104,274 @@
     const key = core.lotKey(lot.event_id, lot.lot_number);
     const msg = hook.bids.get(key);
     const live = msg ? core.bidFromMessage(msg) : null;
-    if (live) return { ...live, known: true };
+    if (live) return { ...live, endsAt: live.endsAt || lot.end_event_date, known: true };
     const detail = lot.bid_detail || {};
-    const ended = lot.end_event_date && Date.parse(lot.end_event_date) < Date.now();
+    const ended = !core.timeLeft(lot.end_event_date);
     return {
       bid: detail.current_bid > 0 ? detail.current_bid : null,
-      bidCount: detail.bid_history ? detail.bid_history.length : null,
-      sold: !!ended,
-      known: detail.current_bid > 0 || !!ended,
+      sold: ended,
+      endsAt: lot.end_event_date,
+      known: detail.current_bid > 0 || ended,
     };
   }
 
   function bidText(info) {
-    if (info.bid != null) return (info.sold ? "Sold at " : "Bid ") + core.money(info.bid);
-    if (info.sold) return "Ended";
-    return info.known ? "No bids yet" : "Bid loading…";
+    if (info.bid != null) return (info.sold ? "Sold " : "Bid ") + core.money(info.bid);
+    if (info.sold) return "Time's up";
+    return info.known ? "No bids" : "…";
   }
 
-  // ---- Building our additions ---------------------------------------------
+  // ---- Building nodes -------------------------------------------------------
 
   function el(tag, attrs, children) {
     const node = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs || {})) {
       if (k === "text") node.textContent = v;
-      else node.setAttribute(k, v);
+      else if (v != null) node.setAttribute(k, v);
     }
-    for (const child of children || []) node.appendChild(child);
+    for (const child of children || []) if (child) node.appendChild(child);
     node.setAttribute(MARK, "");
     return node;
   }
 
-  // Haggle opens a listing when its card is clicked; keep clicks on our links
-  // and panel from also doing that.
-  function isolateClick(node) {
-    node.addEventListener("click", (e) => e.stopPropagation());
-    return node;
-  }
-
   function msrpLink(lot) {
-    return isolateClick(
-      el("a", {
-        class: "hh-msrp",
-        href: core.googleShoppingUrl(core.shoppingQuery(lot)),
-        target: "_blank",
-        rel: "noopener noreferrer",
-        title: "Search Google Shopping for this product's retail price",
-        text: "Check MSRP on Google Shopping",
-      })
-    );
+    const a = el("a", {
+      class: "hh-msrp",
+      href: core.googleShoppingUrl(core.shoppingQuery(lot)),
+      target: "_blank",
+      rel: "noopener noreferrer",
+      title: "Search Google Shopping for this product's retail price",
+      text: "Check MSRP on Google Shopping",
+    });
+    // Haggle's own cards open the listing when clicked anywhere.
+    a.addEventListener("click", (e) => e.stopPropagation());
+    return a;
   }
 
-  function groupPanel(group, current) {
-    const rows = core.sortByBid(group.listings.map((lot) => ({ lot, ...bidInfo(lot) })));
-    const live = rows.filter((r) => r.bid != null && !r.sold).map((r) => r.bid);
-    const summary =
-      "Listed " + group.listings.length + " times · " +
-      (live.length > 1
-        ? "bids " + core.money(Math.min(...live)) + " to " + core.money(Math.max(...live))
-        : live.length
-          ? "bid " + core.money(live[0])
-          : "no bids yet");
-    const currentKey = core.lotKey(current.event_id, current.lot_number);
-    const items = rows.map((r) => {
-      const isCurrent = core.lotKey(r.lot.event_id, r.lot.lot_number) === currentKey;
-      return el("li", isCurrent ? { class: "hh-current" } : {}, [
-        el("a", { href: core.itemPath(r.lot), text: r.lot.location || "Listing" }),
-        el("span", { class: "hh-bid", text: bidText(r) }),
-        el("span", { class: "hh-note", text: isCurrent ? "this card" : "" }),
+  function firstImage(lot) {
+    const images = [...(lot.images || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+    return images[0] && images[0].url;
+  }
+
+  function listingRow(lot) {
+    const key = core.lotKey(lot.event_id, lot.lot_number);
+    return el("li", { "data-hh-lot": key }, [
+      el("a", { href: core.itemPath(lot), text: lot.location || "Listing" }),
+      el("span", { class: "hh-bid" }),
+      el("span", { class: "hh-left" }),
+    ]);
+  }
+
+  function fillRow(row, lot) {
+    const info = bidInfo(lot);
+    row.querySelector(".hh-bid").textContent = bidText(info);
+    row.querySelector(".hh-left").textContent = info.sold ? "" : core.timeLeft(info.endsAt);
+    row.classList.toggle("hh-ended", !!info.sold);
+  }
+
+  function groupCard(group) {
+    // Lowest current bid first, so the best deal is the card's main link.
+    const lots = core.sortByBid(group.listings.map((lot) => ({ lot, ...bidInfo(lot) }))).map((r) => r.lot);
+    const lead = lots[0];
+    const img = firstImage(lead);
+    const card = el("article", { class: "hh-card" }, [
+      el("a", { class: "hh-photo", href: core.itemPath(lead) }, [
+        img ? el("img", { src: img, alt: "", loading: "lazy" }) : null,
+        el("span", { class: "hh-cond", "data-cond": (lead.condition || "").trim(), text: (lead.condition || "").trim() }),
+        lead.retail_value ? el("span", { class: "hh-retail", text: core.money(lead.retail_value) }) : null,
+        lots.length > 1 ? el("span", { class: "hh-count", text: "×" + lots.length }) : null,
+      ]),
+      el("a", { class: "hh-title", href: core.itemPath(lead), title: lead.description || lead.title, text: lead.title }),
+      el("ul", { class: "hh-rows" }, lots.map(listingRow)),
+      msrpLink(lead),
+    ]);
+    card.hhLots = lots;
+    return card;
+  }
+
+  // ---- The results view --------------------------------------------------------
+
+  let view = null;
+  let built = { version: -1 };
+  let cardObserver = null;
+  const visibleCards = new Set();
+
+  function ensureView() {
+    const native = adapter.findScroller(document);
+    if (!native) return null;
+    if (!native.hasAttribute("data-hh-hidden")) native.setAttribute("data-hh-hidden", "");
+    if (!view) {
+      view = el("section", { class: "hh-view" }, [
+        el("div", { class: "hh-head" }, [el("h2", { text: "Browse All Items" }), el("span", { class: "hh-summary" })]),
+        el("div", { class: "hh-grid" }),
+        el("div", { class: "hh-status" }),
       ]);
-    });
-    const details = el("details", { class: "hh-group" }, [el("summary", { text: summary }), el("ul", {}, items)]);
-    if (openPanels.has(group.key)) details.open = true;
-    details.addEventListener("toggle", () => {
-      if (details.open) openPanels.add(group.key);
-      else openPanels.delete(group.key);
-    });
-    return isolateClick(details);
+      cardObserver = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (e.isIntersecting) visibleCards.add(e.target);
+            else visibleCards.delete(e.target);
+          }
+          subscribeVisible();
+        },
+        { root: view, rootMargin: "1000px 0px" }
+      );
+    }
+    if (view.nextElementSibling !== native) native.parentElement.insertBefore(view, native);
+    return view;
   }
 
-  // ---- Applying to the page -----------------------------------------------
+  function removeView() {
+    document.querySelectorAll("[data-hh-hidden]").forEach((n) => n.removeAttribute("data-hh-hidden"));
+    if (view) view.remove();
+    if (cardObserver) cardObserver.disconnect();
+    view = null;
+    cardObserver = null;
+    visibleCards.clear();
+    built = { version: -1 };
+  }
 
-  const applied = new WeakMap(); // card -> signature of what we last added
-
-  function apply() {
-    const cards = adapter.findCards(document).map((card) => ({ card, lot: adapter.readLot(card) })).filter((c) => c.lot);
-
-    // Group the full result set plus anything on screen that isn't in it.
-    const seen = new Set();
-    const universe = [];
-    for (const lot of [...results.lots, ...cards.map((c) => c.lot)]) {
-      const key = core.lotKey(lot.event_id, lot.lot_number);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      universe.push(lot);
+  function renderView() {
+    if (!enabled || !onResultsPage() || !ensureView()) return;
+    const grid = view.querySelector(".hh-grid");
+    if (built.version !== results.version || built.queryJson !== results.queryJson) {
+      const groups = core.groupListings(results.lots);
+      const keep = built.queryJson === results.queryJson ? built.cards : new Map();
+      const cards = new Map();
+      // Reuse cards whose listings haven't changed, so images don't reload
+      // and the list doesn't jump while later pages arrive.
+      const frag = document.createDocumentFragment();
+      for (const group of groups) {
+        const sig = group.listings.map((l) => core.lotKey(l.event_id, l.lot_number)).join(",");
+        let card = keep.get(group.key);
+        if (!card || card.hhSig !== sig) {
+          card = groupCard(group);
+          card.hhSig = sig;
+        }
+        cards.set(group.key, card);
+        frag.appendChild(card);
+      }
+      if (built.queryJson !== results.queryJson) view.scrollTop = 0;
+      const fresh = new Set(cards.values());
+      for (const old of keep.values()) {
+        if (fresh.has(old)) continue;
+        cardObserver.unobserve(old);
+        visibleCards.delete(old);
+      }
+      grid.replaceChildren(frag);
+      for (const card of cards.values()) cardObserver.observe(card);
+      built = { version: results.version, queryJson: results.queryJson, cards, groups: groups.length };
     }
-    const groupOf = new Map();
-    for (const group of core.groupListings(universe)) {
-      for (const lot of group.listings) groupOf.set(core.lotKey(lot.event_id, lot.lot_number), group);
-    }
+    const n = results.lots.length;
+    view.querySelector(".hh-summary").textContent = n
+      ? n + " listings · " + built.groups + " products" + (results.loading ? " · loading more…" : "")
+      : "";
+    view.querySelector(".hh-status").textContent = results.failed
+      ? "Couldn't load all results from Haggle. Turn HaggleHelper off to use Haggle's own list."
+      : results.loading || !results.queryJson
+        ? "Loading results…"
+        : n
+          ? ""
+          : "No items found.";
+    refreshRows();
+  }
 
-    let repeats = 0;
-    for (const { card, lot } of cards) {
-      const key = core.lotKey(lot.event_id, lot.lot_number);
-      const group = groupOf.get(key);
-      const multi = group && group.listings.length > 1;
-      const first = multi && core.lotKey(group.listings[0].event_id, group.listings[0].lot_number) === key;
-      const cell = adapter.gridCell(card);
-      const hide = multi && !first && hideRepeats && !!cell;
-      if (multi) {
-        repeats++;
-        for (const other of group.listings) {
-          if (hook.subscribed.size >= MAX_EXTRA_SUBSCRIPTIONS) break;
-          if (!hook.bids.has(core.lotKey(other.event_id, other.lot_number))) hook.subscribe(other.event_id, other.lot_number);
+  // Bids and countdowns change all the time; update just those texts, and
+  // keep each card's listings ordered lowest bid first as bids come in.
+  function refreshRows() {
+    if (!view) return;
+    for (const card of visibleCards) {
+      if (card.hhLots.length > 1) {
+        const order = core.sortByBid(card.hhLots.map((lot) => ({ lot, ...bidInfo(lot) }))).map((r) => r.lot);
+        if (order.some((lot, i) => lot !== card.hhLots[i])) {
+          const list = card.querySelector(".hh-rows");
+          const byKey = new Map([...list.children].map((li) => [li.getAttribute("data-hh-lot"), li]));
+          for (const lot of order) list.appendChild(byKey.get(core.lotKey(lot.event_id, lot.lot_number)));
+          card.hhLots = order;
         }
       }
-
-      if (cell) {
-        if (hide) cell.setAttribute("data-hh-repeat", "");
-        else cell.removeAttribute("data-hh-repeat");
-      }
-
-      const signature = [
-        key,
-        multi ? group.listings.map((l) => core.lotKey(l.event_id, l.lot_number) + "=" + bidText(bidInfo(l))).join(",") : "",
-        openPanels.has(group && group.key),
-      ].join("|");
-      const hasOurs = card.querySelector(".hh-extras");
-      if (applied.get(card) === signature && hasOurs) continue;
-      applied.set(card, signature);
-
-      if (hasOurs) hasOurs.remove();
-      const extras = el("div", { class: "hh-extras" }, [msrpLink(lot)]);
-      if (multi && (first || !hideRepeats || !cell)) extras.appendChild(groupPanel(group, lot));
-      card.appendChild(extras);
+      const rows = card.querySelectorAll("li[data-hh-lot]");
+      card.hhLots.forEach((lot, i) => rows[i] && fillRow(rows[i], lot));
     }
-    updateToggle(repeats > 0);
   }
 
-  // A small switch for showing the hidden repeat cards.
-  let toggle = null;
-  function updateToggle(show) {
-    if (!show) {
-      if (toggle) toggle.remove();
-      toggle = null;
-      return;
+  function subscribeVisible() {
+    for (const card of visibleCards) {
+      for (const lot of card.hhLots) {
+        if (!core.timeLeft(lot.end_event_date)) continue;
+        hook.subscribe(lot.event_id, lot.lot_number);
+      }
     }
+    refreshRows();
+  }
+
+  // ---- MSRP links on Haggle's own cards (pages other than results) ---------
+
+  function decorateNativeCards() {
+    for (const card of adapter.findCards(document)) {
+      if (card.querySelector(".hh-msrp")) continue;
+      const lot = adapter.readLot(card);
+      if (!lot) continue;
+      const box = el("div", { class: "hh-extras" }, [msrpLink(lot)]);
+      card.appendChild(box);
+    }
+  }
+
+  function removeNativeDecorations() {
+    document.querySelectorAll(".hh-extras").forEach((n) => n.remove());
+  }
+
+  // ---- On/off switch ----------------------------------------------------------
+
+  let toggle = null;
+  function updateToggle() {
     if (!toggle) {
-      toggle = el("button", { class: "hh-toggle", type: "button" });
+      toggle = el("button", { class: "hh-toggle", type: "button", role: "switch" });
       toggle.addEventListener("click", () => {
-        hideRepeats = !hideRepeats;
-        storageSet("hh-hide-repeats", hideRepeats);
-        schedule();
+        enabled = !enabled;
+        storageSet("hh-enabled", enabled);
+        stopRestoring();
+        if (enabled) {
+          results = { queryJson: null, lots: [], loading: false, failed: false, version: results.version + 1 };
+          refreshResults();
+        } else {
+          removeView();
+          removeNativeDecorations();
+        }
+        run();
       });
     }
-    toggle.textContent = hideRepeats ? "Repeat listings grouped · Show all" : "Showing every listing · Group repeats";
+    toggle.setAttribute("aria-checked", String(enabled));
+    toggle.textContent = "HaggleHelper " + (enabled ? "on" : "off");
+    toggle.title = enabled ? "Switch back to Haggle's own pages" : "Turn HaggleHelper on";
     if (!toggle.isConnected) document.body.appendChild(toggle);
   }
 
   // ---- Keeping scroll position --------------------------------------------
-  // The results scroll inside their own box and only render rows near the
-  // screen, so the browser can't restore the position by itself. Save it as
-  // you scroll; when you come back to the same results, scroll back down
-  // (more results load along the way, so keep nudging until it sticks).
+  // Save how far down the results you are as you scroll; when you come back to
+  // the same results, scroll back there (keep nudging while results load).
 
-  const SCROLL_PREFIX = "hh-scroll:";
   let restoring = null;
 
+  function scrollBox() {
+    return enabled && view && view.isConnected ? view : adapter.findScroller(document);
+  }
+
   function pageKey() {
-    return SCROLL_PREFIX + location.pathname + location.search;
+    return "hh-scroll:" + (enabled ? "hh:" : "") + location.pathname + location.search;
   }
 
   let saveTimer = null;
   document.addEventListener(
     "scroll",
     (e) => {
-      const scroller = adapter.findScroller(document);
-      if (!scroller || e.target !== scroller || restoring) return;
+      const box = scrollBox();
+      if (!box || e.target !== box || restoring) return;
       clearTimeout(saveTimer);
       const key = pageKey();
       saveTimer = setTimeout(() => {
         try {
-          sessionStorage.setItem(key, String(scroller.scrollTop));
+          sessionStorage.setItem(key, String(box.scrollTop));
         } catch (err) {
           // Storage refused; nothing to restore later.
         }
@@ -292,11 +396,11 @@
     restoring = {
       stop,
       timer: setInterval(() => {
-        const scroller = adapter.findScroller(document);
+        const box = scrollBox();
         if (Date.now() - startedAt > 15000) return stopRestoring();
-        if (!scroller) return;
-        scroller.scrollTop = target;
-        settled = Math.abs(scroller.scrollTop - target) < 4 ? settled + 1 : 0;
+        if (!box) return;
+        box.scrollTop = target;
+        settled = Math.abs(box.scrollTop - target) < 4 ? settled + 1 : 0;
         if (settled >= 3) stopRestoring();
       }, 200),
     };
@@ -311,6 +415,16 @@
 
   // ---- Wiring ---------------------------------------------------------------
 
+  function apply() {
+    updateToggle();
+    if (!enabled) return;
+    if (onResultsPage()) renderView();
+    else {
+      if (view) removeView();
+      decorateNativeCards();
+    }
+  }
+
   let timer = null;
   function schedule() {
     clearTimeout(timer);
@@ -319,7 +433,7 @@
 
   const observer = new MutationObserver((mutations) => {
     const external = mutations.some((m) =>
-      [...m.addedNodes, ...m.removedNodes].some((n) => !(n.nodeType === 1 && n.hasAttribute(MARK)))
+      [...m.addedNodes, ...m.removedNodes].some((n) => !(n.nodeType === 1 && (n.hasAttribute(MARK) || n.closest("[" + MARK + "]"))))
     );
     if (external) schedule();
   });
@@ -349,8 +463,12 @@
 
   document.addEventListener("hh:update", () => {
     refreshResults();
-    schedule();
+    if (enabled && view) subscribeVisible();
+    else schedule();
   });
+
+  // Countdowns.
+  setInterval(refreshRows, 1000);
 
   const nav = performance.getEntriesByType && performance.getEntriesByType("navigation")[0];
   if (nav && nav.type === "back_forward") restoreScroll();

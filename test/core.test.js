@@ -98,3 +98,12 @@ test("google shopping link searches the text", () => {
 test("itemPath builds Haggle's listing address", () => {
   assert.strictEqual(core.itemPath({ event_id: 5016, lot_number: "20000026125569678" }), "/event/5016/20000026125569678");
 });
+
+test("timeLeft counts down and is empty once ended", () => {
+  const now = Date.parse("2026-10-10T00:00:00Z");
+  assert.strictEqual(core.timeLeft("2026-10-11T04:30:00Z", now), "1d 4h");
+  assert.strictEqual(core.timeLeft("2026-10-10T02:05:00Z", now), "2h 5m");
+  assert.strictEqual(core.timeLeft("2026-10-10T00:04:10Z", now), "4m 10s");
+  assert.strictEqual(core.timeLeft("2026-10-09T23:00:00Z", now), "");
+  assert.strictEqual(core.timeLeft(null, now), "");
+});

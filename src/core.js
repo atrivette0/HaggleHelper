@@ -112,6 +112,17 @@
     return "https://www.google.com/search?tbm=shop&q=" + encodeURIComponent(query);
   }
 
+  // "3d 4h", "2h 5m", "4m 10s"; "" once the time has passed.
+  function timeLeft(endIso, now) {
+    const ms = Date.parse(endIso) - (now == null ? Date.now() : now);
+    if (!(ms > 0)) return "";
+    const s = Math.floor(ms / 1000);
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+    if (d) return d + "d " + h + "h";
+    if (h) return h + "h " + m + "m";
+    return m + "m " + (s % 60) + "s";
+  }
+
   function itemPath(listing) {
     return "/event/" + encodeURIComponent(listing.event_id) + "/" + encodeURIComponent(listing.lot_number);
   }
@@ -129,6 +140,7 @@
     shoppingQuery,
     googleShoppingUrl,
     itemPath,
+    timeLeft,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.HaggleHelperCore = api;
