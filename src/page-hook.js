@@ -71,7 +71,10 @@
       if (url && /\/graphql\b/.test(url) && /appsync-api/.test(url) && init) {
         const headers = new Headers(init.headers || {});
         const key = headers.get("x-api-key");
-        if (key) hh.api = { url, key };
+        if (key && !hh.api) {
+          hh.api = { url, key };
+          notify();
+        }
         const body = typeof init.body === "string" ? JSON.parse(init.body) : null;
         if (body && body.operationName === "GetLots" && body.variables && !hasLotList(body.variables)) {
           hh.lastLotsVariables = body.variables;

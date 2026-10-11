@@ -28,20 +28,11 @@
     return null;
   }
 
-  // The grid cell holding a card (its direct wrapper inside a row grid), or
-  // null when the card isn't in a grid, such as the home page's sliding rows.
-  function gridCell(card) {
-    for (let el = card, depth = 0; el && el.parentElement && depth < 3; el = el.parentElement, depth++) {
-      if (el.parentElement.classList.contains("grid")) return el;
-    }
-    return null;
-  }
-
   function findScroller(doc) {
     return doc.querySelector(SCROLLER);
   }
 
-  const api = { CARD, SCROLLER, findCards, readLot, gridCell, findScroller };
+  const api = { CARD, SCROLLER, findCards, readLot, findScroller };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.HaggleHelperAdapter = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

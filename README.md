@@ -2,9 +2,11 @@
 
 A Chrome and Firefox extension that makes Haggle search results easier to shop, on haggle.com and a-stock.bid.
 
-- **Repeat listings grouped.** When the same product (same title and condition) is listed more than once in your results, the first card gets a "Listed N times" panel with every listing's location and current bid, lowest first, each linking to that listing. The repeat cards are hidden; the button at the bottom left shows them again.
+- **Every result at once.** Search results load in full up front (up to 5,000), instead of a few rows at a time as you scroll.
+- **Repeat listings grouped.** Listings of the same product (same title and condition) share one card that lists each listing's location, current bid and time left, lowest bid first, each linking to that listing.
 - **Check MSRP.** Every card gets a link that searches Google Shopping for the product, so you can check Haggle's retail price.
 - **Keeps your place.** Going back from an item returns you to where you were in the results instead of the top.
+- **On/off switch.** The "HaggleHelper on" button at the bottom left switches back to Haggle's own pages and remembers your choice.
 
 ## Install for development
 
@@ -19,7 +21,7 @@ Then search on haggle.com or a-stock.bid.
 Haggle is a Next.js app whose results grid only renders the rows on screen, and whose cards show the next bid but not the current one. So the extension runs in the page's own context:
 
 - `src/page-hook.js` loads before Haggle's scripts. It listens to Haggle's live-bid websocket to learn each listing's current bid, notes the API key and filters behind the results the page requested, and subscribes to bids for grouped listings that aren't on screen.
-- `src/content.js` asks Haggle's API for the whole result set (up to 500 listings) with the same filters, groups it, and decorates the cards on screen. It also saves and restores the results' scroll position.
+- `src/content.js` asks Haggle's API for the whole result set with the same filters, 500 at a time, groups it, and shows it in its own list in place of Haggle's grid (which it hides rather than changes, since that grid re-renders as you scroll). On other pages it only adds the MSRP link to Haggle's cards. It also saves and restores the results' scroll position.
 - `src/adapter.js` holds everything tied to Haggle's markup: the card class, reading each card's listing from its React props, and the results' scroll box.
 - `src/core.js` is the site-independent logic (grouping, reading bid messages, building links) and is covered by the tests.
 
