@@ -1,6 +1,6 @@
 # HaggleHelper
 
-A Chrome and Firefox extension that makes Haggle (haggle.com) search results easier to shop.
+A Chrome and Firefox extension that makes Haggle search results easier to shop, on haggle.com and a-stock.bid.
 
 - **Repeat listings grouped.** When the same product (same title and condition) is listed more than once in your results, the first card gets a "Listed N times" panel with every listing's location and current bid, lowest first, each linking to that listing. The repeat cards are hidden; the button at the bottom left shows them again.
 - **Check MSRP.** Every card gets a link that searches Google Shopping for the product, so you can check Haggle's retail price.
@@ -12,7 +12,7 @@ A Chrome and Firefox extension that makes Haggle (haggle.com) search results eas
 
 **Firefox (128 or later):** open `about:debugging#/runtime/this-firefox`, click **Load Temporary Add-on** and pick `manifest.json`.
 
-Then search on haggle.com.
+Then search on haggle.com or a-stock.bid.
 
 ## How it works
 
