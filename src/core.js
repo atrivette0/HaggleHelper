@@ -79,20 +79,29 @@
   }
 
   // Haggle keeps the search and the filter bar's choices in the address, e.g.
-  // /browse?search=lamp&sort=retail-price-asc&categories=18,21&conditions=1.
+  // /browse?search=lamp&sort=retail-price-asc&categories=18,21&conditions=1&events=5176.
   // Builds the same GetLots variables Haggle's own page builds from them.
+  // The locations chosen in the header ("My location(s)") are saved in the
+  // browser and apply whenever the address names none; Haggle adds them to
+  // the address shortly after the page opens.
   const SORTS = {
     "ending-soonest": { field: "end_event_date", order: "asc" },
     "retail-price-asc": { field: "retail_value", order: "asc" },
     "retail-price-desc": { field: "retail_value", order: "desc" },
   };
-  function lotsQuery(search) {
+  function lotsQuery(search, savedLocations) {
     const params = new URLSearchParams(search);
     const list = (name) => (params.get(name) || "").split(",").map((v) => v.trim()).filter(Boolean);
+    if (!params.has("locations") && savedLocations && savedLocations.length) params.set("locations", savedLocations.join(","));
     const query = [];
     const text = (params.get("search") || "").trim();
     if (text) query.push({ field: "title", value: text });
-    const filters = [["conditions", "condition_id"], ["locations", "location_id"], ["categories", "category_id"]];
+    const filters = [
+      ["conditions", "condition_id"],
+      ["locations", "location_id"],
+      ["categories", "category_id"],
+      ["events", "event_id"],
+    ];
     for (const [param, field] of filters) {
       const values = [...new Set(list(param))];
       if (values.length) query.push({ field, values });
@@ -100,6 +109,18 @@
     const out = { sort: [SORTS[params.get("sort")] || SORTS["ending-soonest"]] };
     if (query.length) out.query = query;
     return out;
+  }
+
+  // Reads the header's saved locations: Haggle stores them in localStorage
+  // under "haggle.myLocations" as {"state":{"selectedLocationIds":[114]}}.
+  const SAVED_LOCATIONS = "haggle.myLocations";
+  function savedLocationIds(stored) {
+    try {
+      const ids = JSON.parse(stored).state.selectedLocationIds;
+      return Array.isArray(ids) ? ids.map(String) : [];
+    } catch (e) {
+      return [];
+    }
   }
 
   // The fields the results list needs, and nothing more: each extra field is
@@ -205,6 +226,8 @@
     sortByBid,
     bidFromMessage,
     lotsQuery,
+    SAVED_LOCATIONS,
+    savedLocationIds,
     LOTS_QUERY,
     PAGE_SIZE,
     lotsRequestBody,

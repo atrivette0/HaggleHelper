@@ -34,7 +34,13 @@
   let results = { queryJson: null, lots: [], loading: false, failed: false, version: 0 };
 
   function currentQuery() {
-    return core.lotsQuery(location.search);
+    let saved = null;
+    try {
+      saved = localStorage.getItem(core.SAVED_LOCATIONS);
+    } catch (e) {
+      // Storage blocked: only the address's filters apply.
+    }
+    return core.lotsQuery(location.search, core.savedLocationIds(saved));
   }
 
   async function refreshResults() {
