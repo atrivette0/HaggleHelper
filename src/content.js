@@ -172,9 +172,9 @@
 
   function fillRow(row, lot) {
     const info = bidInfo(lot);
-    row.querySelector(".hh-bid").textContent = bidText(info);
-    row.querySelector(".hh-left").textContent = info.sold ? "" : core.timeLeft(info.endsAt);
-    row.classList.toggle("hh-ended", !!info.sold);
+    setText(row.querySelector(".hh-bid"), bidText(info));
+    setText(row.querySelector(".hh-left"), info.sold ? "" : core.timeLeft(info.endsAt));
+    if (row.classList.contains("hh-ended") !== !!info.sold) row.classList.toggle("hh-ended", !!info.sold);
   }
 
   function groupCard(group) {
@@ -194,15 +194,26 @@
         lots.length > 1 ? el("span", { class: "hh-count", text: "×" + lots.length }) : null,
       ]),
       el("a", { class: "hh-title", href: core.itemPath(lead), title: lead.description || lead.title, text: lead.title }),
-      // Listings and bids stay folded until you open them.
-      el("details", { class: "hh-listings" }, [
-        el("summary", { class: "hh-sum" }),
-        el("ul", { class: "hh-rows" }, lots.map((lot) => listingRow(lot, mixed))),
-      ]),
+      // Listings and bids stay folded until you open them, and their rows
+      // are only built then.
+      el("details", { class: "hh-listings" }, [el("summary", { class: "hh-sum" }), el("ul", { class: "hh-rows" })]),
       msrpLink(lead),
     ]);
     card.hhLots = lots;
+    card.hhMixed = mixed;
+    const details = card.querySelector("details");
+    details.addEventListener("toggle", () => {
+      if (!details.open) return;
+      const list = card.querySelector(".hh-rows");
+      if (!list.firstChild) list.append(...card.hhLots.map((lot) => listingRow(lot, card.hhMixed)));
+      refreshCard(card);
+    });
     return card;
+  }
+
+  // Sets a node's text only when it changes, so the page sees no needless edits.
+  function setText(node, text) {
+    if (node.textContent !== text) node.textContent = text;
   }
 
   // ---- The results view --------------------------------------------------------
@@ -210,7 +221,9 @@
   let view = null;
   let built = { version: -1 };
   let cardObserver = null;
+  let moreObserver = null;
   const visibleCards = new Set();
+  const BATCH = 48;
 
   function ensureView() {
     const native = adapter.findScroller(document);
@@ -220,8 +233,16 @@
       view = el("section", { class: "hh-view" }, [
         el("div", { class: "hh-head" }, [el("h2", { text: "Browse All Items" }), el("span", { class: "hh-summary" })]),
         el("div", { class: "hh-grid" }),
+        el("div", { class: "hh-more" }),
         el("div", { class: "hh-status" }),
       ]);
+      // Cards are added a batch at a time as you scroll toward the end, so a
+      // big event doesn't put thousands of cards on the page at once.
+      moreObserver = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && showMore(), {
+        root: view,
+        rootMargin: "1500px 0px",
+      });
+      moreObserver.observe(view.querySelector(".hh-more"));
       cardObserver = new IntersectionObserver(
         (entries) => {
           for (const e of entries) {
@@ -241,6 +262,8 @@
     document.querySelectorAll("[data-hh-hidden]").forEach((n) => n.removeAttribute("data-hh-hidden"));
     if (view) view.remove();
     if (cardObserver) cardObserver.disconnect();
+    if (moreObserver) moreObserver.disconnect();
+    moreObserver = null;
     view = null;
     cardObserver = null;
     visibleCards.clear();
@@ -249,39 +272,22 @@
 
   function renderView() {
     if (!enabled || !onResultsPage() || !ensureView()) return;
-    const grid = view.querySelector(".hh-grid");
     if (built.version !== results.version || built.queryJson !== results.queryJson) {
-      const groups = core.groupListings(results.lots);
-      const keep = built.queryJson === results.queryJson ? built.cards : new Map();
-      const cards = new Map();
-      // Reuse cards whose listings haven't changed, so images don't reload
-      // and the list doesn't jump while later pages arrive.
-      const frag = document.createDocumentFragment();
-      for (const group of groups) {
-        const sig = group.listings.map((l) => core.lotKey(l.event_id, l.lot_number)).join(",");
-        let card = keep.get(group.key);
-        if (!card || card.hhSig !== sig) {
-          card = groupCard(group);
-          card.hhSig = sig;
-        }
-        cards.set(group.key, card);
-        frag.appendChild(card);
-      }
-      if (built.queryJson !== results.queryJson) view.scrollTop = 0;
-      const fresh = new Set(cards.values());
-      for (const old of keep.values()) {
-        if (fresh.has(old)) continue;
-        cardObserver.unobserve(old);
-        visibleCards.delete(old);
-      }
-      grid.replaceChildren(frag);
-      for (const card of cards.values()) cardObserver.observe(card);
-      built = { version: results.version, queryJson: results.queryJson, cards, groups: groups.length };
+      const sameSearch = built.queryJson === results.queryJson;
+      if (!sameSearch) view.scrollTop = 0;
+      built = {
+        version: results.version,
+        queryJson: results.queryJson,
+        groups: core.groupListings(results.lots),
+        cards: sameSearch ? built.cards : new Map(),
+        shown: sameSearch ? built.shown : BATCH,
+      };
+      syncCards();
     }
     const n = results.lots.length;
     view.querySelector(".hh-head h2").textContent = location.pathname === "/event" ? "Event Items" : "Browse All Items";
     view.querySelector(".hh-summary").textContent = n
-      ? n + " listings · " + built.groups + " products" + (results.loading ? " · loading more…" : "")
+      ? n + " listings · " + built.groups.length + " products" + (results.loading ? " · loading more…" : "")
       : "";
     view.querySelector(".hh-status").textContent = results.failed
       ? "Couldn't load all results from Haggle. Turn HaggleHelper off to use Haggle's own list."
@@ -293,24 +299,76 @@
     refreshRows();
   }
 
+  // Puts the first built.shown products on the page. Cards whose listings
+  // haven't changed are reused, so images don't reload and the list doesn't
+  // jump while later pages arrive; when the cards already there are still in
+  // order, new ones are only appended.
+  function syncCards() {
+    const grid = view.querySelector(".hh-grid");
+    const cards = new Map();
+    const wanted = [];
+    for (const group of built.groups.slice(0, built.shown)) {
+      const sig = group.listings.map((l) => core.lotKey(l.event_id, l.lot_number)).join(",");
+      let card = built.cards.get(group.key);
+      if (!card || card.hhSig !== sig) {
+        card = groupCard(group);
+        card.hhSig = sig;
+      }
+      cards.set(group.key, card);
+      wanted.push(card);
+    }
+    const current = [...grid.children];
+    const fresh = new Set(wanted);
+    for (const old of current) {
+      if (fresh.has(old)) continue;
+      cardObserver.unobserve(old);
+      visibleCards.delete(old);
+    }
+    if (current.length <= wanted.length && current.every((card, i) => card === wanted[i])) {
+      grid.append(...wanted.slice(current.length));
+    } else {
+      grid.replaceChildren(...wanted);
+    }
+    const had = new Set(current);
+    for (const card of wanted) if (!had.has(card)) cardObserver.observe(card);
+    built.cards = cards;
+  }
+
+  function showMore() {
+    if (!view || !built.groups || built.shown >= built.groups.length) return;
+    built.shown += BATCH;
+    syncCards();
+    // Observing afresh reports again whether the end is still near, so a
+    // tall window keeps filling.
+    const more = view.querySelector(".hh-more");
+    moreObserver.unobserve(more);
+    moreObserver.observe(more);
+  }
+
   // Bids and countdowns change all the time; update just those texts, and
   // keep each card's listings ordered lowest bid first as bids come in.
   function refreshRows() {
     if (!view) return;
-    for (const card of visibleCards) {
-      if (card.hhLots.length > 1) {
-        const order = core.sortByBid(card.hhLots.map((lot) => ({ lot, ...bidInfo(lot) }))).map((r) => r.lot);
-        if (order.some((lot, i) => lot !== card.hhLots[i])) {
-          const list = card.querySelector(".hh-rows");
+    for (const card of visibleCards) refreshCard(card);
+  }
+
+  function refreshCard(card) {
+    if (card.hhLots.length > 1) {
+      const order = core.sortByBid(card.hhLots.map((lot) => ({ lot, ...bidInfo(lot) }))).map((r) => r.lot);
+      if (order.some((lot, i) => lot !== card.hhLots[i])) {
+        card.hhLots = order;
+        const list = card.querySelector(".hh-rows");
+        if (list.firstChild) {
           const byKey = new Map([...list.children].map((li) => [li.getAttribute("data-hh-lot"), li]));
           for (const lot of order) list.appendChild(byKey.get(core.lotKey(lot.event_id, lot.lot_number)));
-          card.hhLots = order;
         }
       }
+    }
+    if (card.querySelector("details").open) {
       const rows = card.querySelectorAll("li[data-hh-lot]");
       card.hhLots.forEach((lot, i) => rows[i] && fillRow(rows[i], lot));
-      card.querySelector(".hh-sum").textContent = summaryText(card.hhLots);
     }
+    setText(card.querySelector(".hh-sum"), summaryText(card.hhLots));
   }
 
   // The folded line: the best live bid, and how many listings there are.
@@ -428,6 +486,7 @@
         const box = scrollBox();
         if (Date.now() - startedAt > 15000) return stopRestoring();
         if (!box) return;
+        if (box === view) while (built.groups && box.scrollHeight < target + box.clientHeight && built.shown < built.groups.length) showMore();
         box.scrollTop = target;
         settled = Math.abs(box.scrollTop - target) < 4 ? settled + 1 : 0;
         if (settled >= 3) stopRestoring();
