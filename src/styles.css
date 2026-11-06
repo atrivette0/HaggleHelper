@@ -42,6 +42,10 @@
   gap: 12px;
 }
 
+.hh-more {
+  height: 1px;
+}
+
 .hh-status {
   padding: 24px 0;
   text-align: center;
