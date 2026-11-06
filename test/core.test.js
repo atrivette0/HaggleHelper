@@ -175,3 +175,19 @@ test("loadAllLots stops when onPage says so, and reports a failed page", async (
     })
   );
 });
+
+test("resultsQuery covers /browse and event pages, and nothing else", () => {
+  const event = [{ field: "event_id", values: ["5178"] }];
+  assert.deepStrictEqual(core.resultsQuery("/event", "?event=5178", ["114"]).query, event);
+  assert.deepStrictEqual(core.resultsQuery("/event", "?conditions=5&event=5178").query, [
+    { field: "condition_id", values: ["5"] },
+    ...event,
+  ]);
+  // From the Events tab: no event in the address until the page shows which.
+  assert.strictEqual(core.resultsQuery("/event", "", [], null), null);
+  assert.deepStrictEqual(core.resultsQuery("/event", "", [], "5178").query, event);
+  assert.deepStrictEqual(core.resultsQuery("/event", "?event=5180", [], "5178").query, [{ field: "event_id", values: ["5180"] }]);
+  assert.deepStrictEqual(core.resultsQuery("/browse", "?search=lamp", ["114"]), core.lotsQuery("?search=lamp", ["114"]));
+  assert.strictEqual(core.resultsQuery("/", "?event=5178"), null);
+  assert.strictEqual(core.resultsQuery("/event/5178/123", ""), null);
+});

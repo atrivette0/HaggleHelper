@@ -103,12 +103,28 @@
       ["events", "event_id"],
     ];
     for (const [param, field] of filters) {
-      const values = [...new Set(list(param))];
+      // An event's own page (/event?event=5178) names it as "event".
+      const values = [...new Set(param === "events" ? list("events").concat(list("event")) : list(param))];
       if (values.length) query.push({ field, values });
     }
     const out = { sort: [SORTS[params.get("sort")] || SORTS["ending-soonest"]] };
     if (query.length) out.query = query;
     return out;
+  }
+
+  // The listings a results page shows: /browse, or an event's page, which
+  // names its event in the address or, when opened from the Events tab with
+  // none, shows the one Haggle picked (pageEvent). Null on any other page.
+  // An event is at one location, so saved locations don't apply there.
+  function resultsQuery(path, search, savedLocations, pageEvent) {
+    if (path === "/browse") return lotsQuery(search, savedLocations);
+    if (path !== "/event") return null;
+    const params = new URLSearchParams(search);
+    if (!params.get("event") && !params.get("events")) {
+      if (!pageEvent) return null;
+      params.set("event", pageEvent);
+    }
+    return lotsQuery(params.toString());
   }
 
   // Reads the header's saved locations: Haggle stores them in localStorage
@@ -226,6 +242,7 @@
     sortByBid,
     bidFromMessage,
     lotsQuery,
+    resultsQuery,
     SAVED_LOCATIONS,
     savedLocationIds,
     LOTS_QUERY,
