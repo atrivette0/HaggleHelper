@@ -1,7 +1,7 @@
 // Runs on Haggle pages, in the page's own context (it reads React props and
 // what src/page-hook.js collected).
 //
-// On search results (/browse) it swaps Haggle's grid for its own list:
+// On search results (/browse) and event pages (/event) it swaps Haggle's grid for its own list:
 // - every result is loaded up front, not a few rows at a time;
 // - listings of the same product (same title) share one card
 //   (whatever their condition) that lists each listing's location,
@@ -26,7 +26,7 @@
   let enabled = document.documentElement.getAttribute("data-hh-enabled") !== "false";
 
   function onResultsPage() {
-    return location.pathname === "/browse";
+    return currentQuery() !== null;
   }
 
   // ---- Loading every result ------------------------------------------------
@@ -40,7 +40,7 @@
     } catch (e) {
       // Storage blocked: only the address's filters apply.
     }
-    return core.lotsQuery(location.search, core.savedLocationIds(saved));
+    return core.resultsQuery(location.pathname, location.search, core.savedLocationIds(saved), hook.pageEvent);
   }
 
   async function refreshResults() {
@@ -279,6 +279,7 @@
       built = { version: results.version, queryJson: results.queryJson, cards, groups: groups.length };
     }
     const n = results.lots.length;
+    view.querySelector(".hh-head h2").textContent = location.pathname === "/event" ? "Event Items" : "Browse All Items";
     view.querySelector(".hh-summary").textContent = n
       ? n + " listings · " + built.groups + " products" + (results.loading ? " · loading more…" : "")
       : "";

@@ -26,6 +26,7 @@
     // The first pages of results, requested as the page starts:
     // { queryJson, pages: Map(from -> Promise of the parsed response) }.
     prefetch: null,
+    pageEvent: null, // the event an /event page without ?event= shows
     // A remembered key Haggle no longer accepts: wait for the page's own.
     forgetApi() {
       try {
@@ -104,6 +105,17 @@
           }
           if (changed) notify();
         }
+        // Opened from the Events tab, an event's page names no event in its
+        // address; learn which one it shows from the page's own request.
+        if (location.pathname === "/event" && typeof init.body === "string" && /"GetLots"/.test(init.body)) {
+          const filters = (JSON.parse(init.body).variables || {}).query || [];
+          const event = filters.find((f) => f.field === "event_id");
+          const ids = event && event.values ? event.values.join(",") : null;
+          if (ids && ids !== hh.pageEvent) {
+            hh.pageEvent = ids;
+            notify();
+          }
+        }
       }
     } catch (e) {
       // Never get in the way of the page's own requests.
@@ -116,14 +128,18 @@
   hh.parallel = PARALLEL;
   const core = window.HaggleHelperCore;
   const off = document.documentElement.getAttribute("data-hh-enabled") === "false";
-  if (core && hh.api && !off && location.pathname === "/browse") {
+  if (core && hh.api && !off && (location.pathname === "/browse" || location.pathname === "/event")) {
     let saved = null;
     try {
       saved = localStorage.getItem(core.SAVED_LOCATIONS);
     } catch (e) {
       // Storage blocked: only the address's filters apply.
     }
-    const query = core.lotsQuery(location.search, core.savedLocationIds(saved));
+    const query = core.resultsQuery(location.pathname, location.search, core.savedLocationIds(saved), null);
+    if (query) startPrefetch(query);
+  }
+
+  function startPrefetch(query) {
     const pages = new Map();
     for (let i = 0; i < PARALLEL; i++) {
       const from = i * core.PAGE_SIZE;
