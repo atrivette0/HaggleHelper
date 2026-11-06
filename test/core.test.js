@@ -79,6 +79,24 @@ test("lotsQuery builds Haggle's filters from the address", () => {
     sort: endingSoonest,
     query: [{ field: "category_id", values: ["18"] }],
   });
+  assert.deepStrictEqual(core.lotsQuery("?events=5176,5177&conditions=1").query, [
+    { field: "condition_id", values: ["1"] },
+    { field: "event_id", values: ["5176", "5177"] },
+  ]);
+});
+
+test("lotsQuery uses the header's saved locations unless the address names some", () => {
+  const saved = core.savedLocationIds('{"state":{"selectedLocationIds":[114,111]},"version":0}');
+  assert.deepStrictEqual(saved, ["114", "111"]);
+  assert.deepStrictEqual(core.lotsQuery("?search=lamp", saved).query, [
+    { field: "title", value: "lamp" },
+    { field: "location_id", values: ["114", "111"] },
+  ]);
+  // Haggle then adds them to the address; the query stays the same.
+  assert.deepStrictEqual(core.lotsQuery("?search=lamp&locations=114,111", saved), core.lotsQuery("?search=lamp", saved));
+  assert.deepStrictEqual(core.lotsQuery("?locations=7", saved).query, [{ field: "location_id", values: ["7"] }]);
+  assert.deepStrictEqual(core.savedLocationIds(null), []);
+  assert.deepStrictEqual(core.savedLocationIds("not json"), []);
 });
 
 test("shoppingQuery uses the full name when the description starts with the title", () => {

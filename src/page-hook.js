@@ -117,7 +117,13 @@
   const core = window.HaggleHelperCore;
   const off = document.documentElement.getAttribute("data-hh-enabled") === "false";
   if (core && hh.api && !off && location.pathname === "/browse") {
-    const query = core.lotsQuery(location.search);
+    let saved = null;
+    try {
+      saved = localStorage.getItem(core.SAVED_LOCATIONS);
+    } catch (e) {
+      // Storage blocked: only the address's filters apply.
+    }
+    const query = core.lotsQuery(location.search, core.savedLocationIds(saved));
     const pages = new Map();
     for (let i = 0; i < PARALLEL; i++) {
       const from = i * core.PAGE_SIZE;
